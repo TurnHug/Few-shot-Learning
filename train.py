@@ -135,7 +135,7 @@ class FewShotTrainer:
             df = pd.DataFrame(all_predictions)
             df.to_csv(save_path, index=False)
 
-        return predicted_labels  # 返回预测标签
+        return all_predictions  # 返回预测标签
 
     def validate_epoch(self, epoch, n_val_episodes):
         self.model.eval()  # 设置模型为评估模式
