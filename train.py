@@ -8,7 +8,6 @@ import os
 import argparse
 from datetime import datetime
 from dataset import get_dataloaders
-from evaluate import calculate_accuracy, visualize_predictions
 from model import get_model, PrototypicalLoss
 import torch.optim.lr_scheduler as lr_scheduler
 import logging
