@@ -12,10 +12,10 @@ import sys
 
 # 在文件开头添加以下代码来配置日志
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
+
 
 class FewShotDataset(Dataset):
     def __init__(self, root_dir: str):
@@ -126,13 +126,9 @@ class TestDataset:
             ]
         )
 
-        self.task_dirs = [d for d in os.listdir(root_dir) if d.startswith("task")]
-        self.class_to_idx = {
-            cls_name: idx
-            for idx, cls_name in enumerate(
-                os.listdir(os.path.join(root_dir, self.task_dirs[0], "support"))
-            )
-        }
+        self.task_dirs = [
+            d for d in sorted(os.listdir(root_dir)) if d.startswith("task")
+        ]
 
     def load_task(self, task_idx: int) -> Dict[str, torch.Tensor]:
         """加载指定task的数据"""
@@ -140,17 +136,22 @@ class TestDataset:
         support_dir = os.path.join(task_dir, "support")
         query_dir = os.path.join(task_dir, "query")
 
+        # 为当前任务创建class_to_idx
+        class_to_idx = {
+            cls_name: idx for idx, cls_name in enumerate(sorted(os.listdir(support_dir)))
+        }
+
         # 加载支持集
         support_images = []
         support_labels = []
-        for label, cls_name in enumerate(sorted(os.listdir(support_dir))):
+        for cls_name in sorted(os.listdir(support_dir)):
             cls_path = os.path.join(support_dir, cls_name)
             for img_name in os.listdir(cls_path):
                 img_path = os.path.join(cls_path, img_name)
                 img = Image.open(img_path).convert("RGB")
                 img = self.transform(img)
                 support_images.append(img)
-                support_labels.append(label)
+                support_labels.append(class_to_idx[cls_name])
 
         # 加载查询集
         query_images = []
@@ -167,33 +168,49 @@ class TestDataset:
             "support_labels": torch.tensor(support_labels),
             "query_images": torch.stack(query_images),
             "query_paths": query_paths,
+            "class_to_idx": class_to_idx
         }
 
 
 # 数据加载示例
-def get_dataloaders(train_dir: str, test_dir: str, val_size: float, batch_size: int = 32):
-    # 训练集数据加载器
-    train_dataset = FewShotDataset(train_dir)
+def get_dataloaders(
+    train_dir: str, test_dir: str, val_size: float, is_train: bool, batch_size: int = 32
+):
+    if is_train:
+        # 训练集数据加载器
+        train_dataset = FewShotDataset(train_dir)
 
-    # 划分训练集和验证集
-    train_size = int(len(train_dataset) * (1-val_size))
-    val_size = len(train_dataset) - train_size
-    train_dataset, val_dataset = random_split(train_dataset, [train_size, val_size])
-    train_loader = DataLoader(
-        train_dataset, batch_size=batch_size, shuffle=True, num_workers=8
-    )
+        # 划分训练集和验证集
+        train_size = int(len(train_dataset) * (1 - val_size))
+        val_size = len(train_dataset) - train_size
+        train_dataset, val_dataset = random_split(train_dataset, [train_size, val_size])
+        train_loader = DataLoader(
+            train_dataset, batch_size=batch_size, shuffle=True, num_workers=8
+        )
 
-    val_loader = DataLoader(
-        val_dataset, batch_size=batch_size, shuffle=False, num_workers=8
-    )
+        val_loader = DataLoader(
+            val_dataset, batch_size=batch_size, shuffle=False, num_workers=8
+        )
+        logger.info(
+            "train size: {}, val size: {}.".format(
+                train_size, val_size
+            )
+        )
+        return train_loader, val_loader
+    else:
+        # 测试集数据加载器
 
-    test_dataset = TestDataset(test_dir)
+        test_dataset = TestDataset(test_dir)
 
-    logger.info("train size: {}, val size: {}, test task num: {}".format(train_size, val_size, len(test_dataset.task_dirs)))
-    return train_loader, val_loader, test_dataset
+        logger.info(
+            "test task num: {}".format(
+                 len(test_dataset.task_dirs)
+            )
+        )
+        return test_dataset
 
 
 if __name__ == "__main__":
     train_dir = r"./dataset/train_set"
     test_dir = r"./dataset/test_set"
-    train_loader, val_loader, test_dataset = get_dataloaders(train_dir, test_dir)
+    train_loader, val_loader, test_dataset = get_dataloaders(train_dir, test_dir,is_train=True)
