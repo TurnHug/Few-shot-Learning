@@ -18,7 +18,7 @@ import sys
 # 在文件开头添加以下代码来配置日志
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    format='%(asctime)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
 
@@ -41,7 +41,7 @@ class FewShotTrainer:
         self.criterion = PrototypicalLoss()  # 损失函数
         self.optimizer = optim.Adam(self.model.parameters(), lr=lr)  # 优化器
         self.writer = SummaryWriter(log_dir)  # TensorBoard记录器
-        self.scheduler = lr_scheduler.StepLR(self.optimizer, step_size=10, gamma=0.5)  # 学习率调度器
+        self.scheduler = lr_scheduler.StepLR(self.optimizer, step_size=25, gamma=0.5)  # 学习率调度器
 
     def train_epoch(self, epoch, n_way=10, k_shot=5, q_query=2, n_episodes=30):
         self.model.train()  # 设置模型为训练模式
@@ -98,7 +98,7 @@ class FewShotTrainer:
 
         with torch.no_grad():
             for task_idx in tqdm(
-                range(len(self.test_dataset.task_dirs)), desc="评估中"
+                range(len(self.test_dataset.task_dirs)), desc="Predict ..."
             ):
                 task_data = self.test_dataset.load_task(task_idx)  # 加载任务数据
 
@@ -135,7 +135,7 @@ class FewShotTrainer:
             df = pd.DataFrame(all_predictions)
             df.to_csv(save_path, index=False)
 
-        return all_predictions  # 返回预测标签
+        return all_predictions
 
     def validate_epoch(self, epoch, n_val_episodes):
         self.model.eval()  # 设置模型为评估模式
@@ -242,13 +242,13 @@ def parse_args():
         choices=["prototypical", "matching", "relation"],
         help="选择模型",  # 模型选择
     )
-    parser.add_argument("--learning_rate", type=float, default=0.001, help="学习率") 
-    parser.add_argument("--num_epochs", type=int, default=50, help="训练轮数")  
+    parser.add_argument("--learning_rate", type=float, default=0.01, help="学习率") 
+    parser.add_argument("--num_epochs", type=int, default=150, help="训练轮数")  
     parser.add_argument(
-        "--n_episodes", type=int, default=100, help="每个epoch训练的episode数量" 
+        "--n_episodes", type=int, default=50, help="每个epoch训练的episode数量" 
     )
     parser.add_argument(
-        "--n_val_episodes", type=int, default=20, help="每个epoch验证的episode数量"  
+        "--n_val_episodes", type=int, default=10, help="每个epoch验证的episode数量"  
     )
     parser.add_argument("--n_way", type=int, default=10, help="分类的类别数")  
     parser.add_argument(
@@ -297,11 +297,11 @@ def main():
         n_episodes=args.n_episodes,
         n_val_episodes=args.n_val_episodes,
     )
-    args.criterion = trainer.criterion  # 获取损失函数
-    args.optimizer = trainer.optimizer  # 获取优化器
-    args.lr_scheduler = trainer.scheduler  # 获取学习率调度器
-    args.pretrained_model = trainer.model.feature_extractor.pretrained_model  # 获取预训练模型
-    args.feature_dim = trainer.model.feature_extractor.feature_dim  # 获取特征维度
+    args.criterion = str(trainer.criterion)  # 获取损失函数
+    args.optimizer = str(trainer.optimizer)  # 获取优化器
+    args.lr_scheduler = str(trainer.scheduler)  # 获取学习率调度器
+    args.pretrained_model = str(trainer.model.feature_extractor.pretrained_model)  # 获取预训练模型
+    args.feature_dim = str(trainer.model.feature_extractor.feature_dim)  # 获取特征维度
 
     predictions = trainer.evaluate(
         save_predictions=True,
