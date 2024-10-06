@@ -186,7 +186,6 @@ def parse_args():
     parser.add_argument(
         "--test_models_dir",
         type=str,
-        default="all",
         required=True,
         help="待测试模型保存路径",
     )
