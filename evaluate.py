@@ -182,7 +182,7 @@ def load_model_info(experiment_dir="experiments"):
             "test_time",
         ]
     ]
-
+    show_df.to_csv(experiment_dir + "/model_compare.csv", index=False)
     return show_df
 
 
