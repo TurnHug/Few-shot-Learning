@@ -40,10 +40,16 @@ class FewShotTester:
         self.model = self.load_model_info()  # 加载模型
 
     def load_model_info(self):
-        model = torch.load(
-            os.path.join(self.test_model_dir, "checkpoints", "best_model.pth"),
-            map_location=self.device,
-        )
+        try:
+            model = torch.load(
+                os.path.join(self.test_model_dir, "checkpoints", "best_model.pth"),
+                map_location=self.device,
+            )
+        except:
+            model = torch.load(
+                os.path.join(self.test_model_dir, "checkpoints", "latest_model.pth"),
+                map_location=self.device,
+            )
         return model
 
     def evaluate(self, save_predictions=False, save_path=None):
@@ -174,8 +180,10 @@ def load_model_info(experiment_dir="experiments"):
             "experiment_folder",  # 添加实验文件夹名称列
             "model",
             "backbone_model",
-            "learning_rate",
+            "prototype_method",
             "num_epochs",
+            "optimizer",
+            "learning_rate",
             "n_episodes",
             "n_val_episodes",
             "accuracy",
@@ -183,6 +191,7 @@ def load_model_info(experiment_dir="experiments"):
         ]
     ]
     show_df.to_csv(experiment_dir + "/model_compare.csv", index=False)
+
     return show_df
 
 
