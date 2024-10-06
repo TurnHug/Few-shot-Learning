@@ -77,17 +77,21 @@ class FewShotTester:
                 true_labels = self.true_label_df.set_index(
                     "img_name"
                 )  # 将真实标签数据框设置为以文件名为索引
-                correct_predictions = sum(
-                    true_labels.loc[os.path.basename(query_paths[i]), "label"]
-                    == predicted_labels[i]
-                    for i in range(len(predicted_labels))
-                    if os.path.basename(query_paths[i]) in true_labels.index
-                )
-                total_correct += correct_predictions
-                total_predictions += len(predicted_labels)
+                
+                # 检查预测结果与真实标签的对应关系
+                for i, pred_label in enumerate(predicted_labels):
+                    img_name = os.path.basename(query_paths[i])
+                    if img_name in true_labels.index:
+                        true_label = true_labels.loc[img_name, "label"]
+                        if pred_label == true_label:
+                            total_correct += 1
+                        total_predictions += 1
+                    else:
+                        logger.warning(f"找不到图片 {img_name} 的真实标签")
+
                 task_accuracy = (
-                    correct_predictions / len(predicted_labels)
-                    if len(predicted_labels) > 0
+                    total_correct / total_predictions
+                    if total_predictions > 0
                     else 0
                 )
 
@@ -99,14 +103,14 @@ class FewShotTester:
                 # 如果需要保存预测结果
                 if save_predictions:
                     for i, pred_label in enumerate(predicted_labels):
+                        img_name = os.path.basename(query_paths[i])
                         self.all_predictions.append(
                             {
-                                "img_name": os.path.basename(
-                                    task_data["query_paths"][i]
-                                ),
+                                "img_name": img_name,
                                 "label": pred_label,
                             }
                         )
+        
         predict_df = pd.DataFrame(self.all_predictions)
         # 保存预测结果到CSV文件
         if save_predictions and save_path:
@@ -156,8 +160,10 @@ def load_model_info(experiment_dir="experiments"):
     all_model_info = []
 
     for file in model_info_files:
+        folder_name = os.path.basename(os.path.dirname(file))  # 获取文件夹名称
         with open(file, "r", encoding="utf-8") as f:
             model_info = json.load(f)
+            model_info["experiment_folder"] = folder_name  # 添加文件夹名称到模型信息
             all_model_info.append(model_info)
 
     # 将所有模型信息合并为一个DataFrame
@@ -165,10 +171,13 @@ def load_model_info(experiment_dir="experiments"):
 
     show_df = model_info_df[
         [
+            "experiment_folder",  # 添加实验文件夹名称列
             "model",
             "backbone_model",
             "learning_rate",
             "num_epochs",
+            "n_episodes",
+            "n_val_episodes",
             "accuracy",
             "test_time",
         ]
