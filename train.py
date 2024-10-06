@@ -1,16 +1,17 @@
+import argparse
+import json
+import logging
+import os
+from datetime import datetime
+
 import torch
 import torch.optim as optim
-from torch.utils.tensorboard import SummaryWriter
-import numpy as np
-from tqdm import tqdm
-import json
-import os
-import argparse
-from datetime import datetime
-from dataset import get_dataloaders
-from model import get_model, PrototypicalLoss
 import torch.optim.lr_scheduler as lr_scheduler
-import logging
+from torch.utils.tensorboard import SummaryWriter
+from tqdm import tqdm
+
+from dataset import get_dataloaders
+from model import RelationLoss, get_model, PrototypicalLoss
 
 # 在文件开头添加以下代码来配置日志
 logging.basicConfig(
@@ -21,24 +22,25 @@ logger = logging.getLogger(__name__)
 
 class FewShotTrainer:
     def __init__(
-        self,
-        model,
-        train_loader,
-        val_loader,
-        lr=0.01,
-        device="cuda",
-        log_dir="runs",
+            self,
+            model,
+            train_loader,
+            val_loader,
+            criterion,
+            optimizer,
+            scheduler,
+            device="cuda",
+            log_dir="runs",
     ):
         self.model = model.to(device)  # 将模型移动到指定设备
         self.train_loader = train_loader  # 训练数据加载器
         self.val_loader = val_loader  # 验证数据加载器
         self.device = device  # 设备类型
-        self.criterion = PrototypicalLoss()  # 损失函数
-        self.optimizer = optim.Adam(self.model.parameters(), lr=lr)  # 优化器
+        
+        self.criterion = criterion
+        self.optimizer = optimizer  # 优化器
         self.writer = SummaryWriter(log_dir)  # TensorBoard记录器
-        self.scheduler = lr_scheduler.StepLR(
-            self.optimizer, step_size=25, gamma=0.5
-        )  # 学习率调度器
+        self.scheduler = scheduler
 
     def train_epoch(self, epoch, n_way=10, k_shot=5, q_query=2, n_episodes=30):
         self.model.train()  # 设置模型为训练模式
@@ -60,9 +62,12 @@ class FewShotTrainer:
 
                 # 前向传播计算logits
                 logits = self.model(support_images, support_labels, query_images, n_way)
-
-                # 计算损失
-                loss = self.criterion(logits, query_labels)
+                
+                try:
+                    # 计算损失
+                    loss = self.criterion(logits, query_labels)
+                except:
+                    loss = self.criterion(logits, query_labels, n_way)
 
                 self.optimizer.zero_grad()  # 清空梯度
                 loss.backward()  # 反向传播
@@ -89,7 +94,6 @@ class FewShotTrainer:
 
         return avg_loss, avg_acc  # 返回平均损失和准确率
 
-
     def validate_epoch(self, epoch, n_val_episodes):
         self.model.eval()  # 设置模型为评估模式
         total_val_loss = 0
@@ -97,7 +101,7 @@ class FewShotTrainer:
 
         with torch.no_grad():
             with tqdm(
-                range(n_val_episodes), desc=f"Epoch {epoch + 1} - validate"
+                    range(n_val_episodes), desc=f"Epoch {epoch + 1} - validate"
             ) as pbar:
                 for episode in pbar:
                     # 从验证集中采样一个episode
@@ -117,7 +121,11 @@ class FewShotTrainer:
                     )
 
                     # 计算验证损失
-                    val_loss = self.criterion(logits, query_labels)
+                    try:
+                   
+                        val_loss = self.criterion(logits, query_labels)
+                    except:
+                        val_loss = self.criterion(logits, query_labels, n_way=10)
 
                     # 计算预测结果和验证准确率
                     predictions = torch.argmax(logits, dim=1)
@@ -152,8 +160,8 @@ class FewShotTrainer:
             val_loss, val_acc = self.validate_epoch(
                 epoch, n_val_episodes=n_val_episodes
             )
-
-            self.scheduler.step()  # 更新学习率
+            if self.scheduler is not None:
+                self.scheduler.step()  # 更新学习率
 
             # 每5个epoch保存一次模型
             if (epoch + 1) % 5 == 0:
@@ -184,22 +192,35 @@ def parse_args():
         choices=["prototypical", "matching", "relation"],
         help="选择模型",  # 模型选择
     )
-    
+
     parser.add_argument(
         "--backbone_model",
         type=str,
         default="resnet18",
-        choices=["resnet18", "resnet34", "resnet50", "vgg16", "vgg19","densenet121","efficientnet_b0", "mobilenet_v2"],
+        choices=["resnet18", "resnet34", "resnet50", "vgg16", "vgg19", "densenet121", "efficientnet_b0",
+                 "mobilenet_v2"],
         help="选择特征提取预训练模型",
     )
-    parser.add_argument("--learning_rate", type=float, default=0.001, help="学习率")
-    parser.add_argument("--num_epochs", type=int, default=10, help="训练轮数")
+    
     parser.add_argument(
-        "--n_episodes", type=int, default=10, help="每个epoch训练的episode数量"
+        "--prototype_method",
+        type=str,
+        default="simple",
+        choices=["simple", "weighted", "attention"],
+        help="选择分类模型的原型计算方法",
     )
     parser.add_argument(
-        "--n_val_episodes", type=int, default=5, help="每个epoch验证的episode数量"
+        "--n_episodes", type=int, default=60, help="每个epoch训练的episode数量"
     )
+    parser.add_argument(
+        "--n_val_episodes", type=int, default=10, help="每个epoch验证的episode数量"
+    )
+    parser.add_argument("--num_epochs", type=int, default=1, help="训练轮数")
+    parser.add_argument("--optimizer", type=str, default="adam",choices=["adam", "sgd"], help="优化器")
+    parser.add_argument("--learning_rate", type=float, default=0.005, help="学习率")
+    parser.add_argument("--weight_decay", type=float, default=1e-4, help="权重衰减")
+    parser.add_argument("--lr_scheduler", type=bool, default=False, help="学习率调整")
+
     parser.add_argument("--n_way", type=int, default=10, help="分类的类别数")
     parser.add_argument(
         "--k_shot", type=int, default=5, help="支持集中每个类别的样本数"
@@ -228,14 +249,45 @@ def main():
     train_loader, val_loader = get_dataloaders(
         args.train_dir, "", args.val_size, is_train=True
     )
+    # 创建模型配置
+    model_config = {
+        'backbone_model': args.backbone_model,
+        'pretrained': True,
+        'prototype_method': args.prototype_method,
+        'relation_module_params': {
+            'input_channels': 1024,  # 2 * feature_dim for relation pairs
+            'hidden_channels': [512, 256, 64],
+            'kernel_size': 3,
+            'dropout': 0.5
+        }
+    }
+    if args.model == "prototypical" or args.model == "matching":
+        criterion = PrototypicalLoss()
+    elif args.model == "relation":
+        criterion = RelationLoss()
 
-    model = get_model(args.model, args.backbone_model, pretrained=True)
+    model = get_model(args.model, **model_config)
+    
+    if args.optimizer == "adam":
+        optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay)
+    elif args.optimizer == "sgd":
+        optimizer = torch.optim.SGD(model.parameters(), lr=args.learning_rate, momentum=0.9, weight_decay=args.weight_decay)
+    else:
+        raise ValueError(f"Unknown optimizer: {args.optimizer}")
+    
+    if args.lr_scheduler:
+        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=30, gamma=0.5)
+    else:
+        scheduler = None
+    
 
     trainer = FewShotTrainer(
         model=model,
         train_loader=train_loader,
         val_loader=val_loader,
-        lr=args.learning_rate,
+        criterion=criterion,
+        optimizer=optimizer,
+        scheduler=scheduler,
         device=args.device,
         log_dir=os.path.join(exp_dir, "logs"),  # 日志目录
     )
@@ -247,10 +299,12 @@ def main():
         n_val_episodes=args.n_val_episodes,
     )
     args.criterion = str(trainer.criterion)  # 获取损失函数
-    args.optimizer = str(trainer.optimizer)  # 获取优化器
-    args.lr_scheduler = str(trainer.scheduler.state_dict())  # 获取学习率调度器的初始化参数
+    if args.lr_scheduler:
+    
+        args.lr_scheduler = str(trainer.scheduler.state_dict())  # 获取学习率调度器的初始化参数
+    else:
+        args.lr_scheduler = None
     args.feature_dim = str(trainer.model.feature_extractor.feature_dim)  # 获取特征维度
-
 
     with open(os.path.join(exp_dir, "model_info.json"), "w") as f:
         json.dump(vars(args), f, indent=4)  # 保存模型信息
