@@ -83,7 +83,7 @@ class FewShotTester:
                 true_labels = self.true_label_df.set_index(
                     "img_name"
                 )  # 将真实标签数据框设置为以文件名为索引
-                
+
                 # 检查预测结果与真实标签的对应关系
                 for i, pred_label in enumerate(predicted_labels):
                     img_name = os.path.basename(query_paths[i])
@@ -92,13 +92,20 @@ class FewShotTester:
                         if pred_label == true_label:
                             total_correct += 1
                         total_predictions += 1
+                        # 如果需要保存预测结果
+                        if save_predictions:
+                            self.all_predictions.append(
+                                {
+                                    "img_name": img_name,
+                                    "predicted_label": pred_label,
+                                    "true_label": true_label,
+                                }
+                            )
                     else:
                         logger.warning(f"找不到图片 {img_name} 的真实标签")
 
                 task_accuracy = (
-                    total_correct / total_predictions
-                    if total_predictions > 0
-                    else 0
+                    total_correct / total_predictions if total_predictions > 0 else 0
                 )
 
                 # 在tqdm中显示当前任务的准确率
@@ -106,17 +113,6 @@ class FewShotTester:
                     f"Task {task_idx + 1}/{len(self.test_dataset.task_dirs)} - Accuracy: {task_accuracy:.4f}"
                 )
 
-                # 如果需要保存预测结果
-                if save_predictions:
-                    for i, pred_label in enumerate(predicted_labels):
-                        img_name = os.path.basename(query_paths[i])
-                        self.all_predictions.append(
-                            {
-                                "img_name": img_name,
-                                "label": pred_label,
-                            }
-                        )
-        
         predict_df = pd.DataFrame(self.all_predictions)
         # 保存预测结果到CSV文件
         if save_predictions and save_path:
@@ -129,15 +125,9 @@ class FewShotTester:
         return predict_df, overall_accuracy
 
 
-def visualize_predictions(predictions_df, true_labels_df, num_images=9):
-
-    # 合并数据框
-    merged_df = pd.merge(
-        predictions_df, true_labels_df, on="img_name", suffixes=("_pred", "_true")
-    )
-
+def visualize_predictions(predictions_df, num_images=9):
     # 随机选择要可视化的图像
-    sample_df = merged_df.sample(n=num_images)
+    sample_df = predictions_df.sample(n=num_images)
 
     # 创建可视化
     plt.figure(figsize=(10, 10))  # 调整图像大小
@@ -152,7 +142,7 @@ def visualize_predictions(predictions_df, true_labels_df, num_images=9):
         img = plt.imread(img_path)
         plt.subplot(3, 3, i + 1)  # 3行3列
         plt.imshow(img)
-        plt.title(f"True: {row.label_true}\nPred: {row.label_pred}")
+        plt.title(f"True: {row.true_label}\nPred: {row.predicted_label}")
         plt.axis("off")  # 关闭坐标轴
 
     plt.tight_layout()
@@ -184,13 +174,14 @@ def load_model_info(experiment_dir="experiments"):
             "num_epochs",
             "optimizer",
             "learning_rate",
+            "is_scheduler",
             "n_episodes",
             "n_val_episodes",
             "accuracy",
             "test_time",
         ]
     ]
-    show_df.to_csv(experiment_dir + "/model_compare.csv", index=False)
+    model_info_df.to_csv(experiment_dir + "/model_compare.csv", index=False)
 
     return show_df
 
@@ -222,6 +213,7 @@ def parse_args():
 
     return parser.parse_args()
 
+
 def main():
     args = parse_args()
     logger.info(json.dumps(vars(args), indent=4))  # 记录参数信息
@@ -236,7 +228,7 @@ def main():
         save_path=os.path.join(args.test_models_dir, "predictions.csv"),
     )
 
-    plt = visualize_predictions(predictions_df, tester.true_label_df)  # 可视化预测结果
+    plt = visualize_predictions(predictions_df)  # 可视化预测结果
     plt.savefig(os.path.join(args.test_models_dir, "example_predict.png"))
 
     # 打开并读取模型信息文件
@@ -256,6 +248,7 @@ def main():
     infos = load_model_info()
     # 使用 tabulate 打印美观的表格
     print(tabulate(infos, headers="keys", tablefmt="pretty"))
+
 
 if __name__ == "__main__":
     main()
